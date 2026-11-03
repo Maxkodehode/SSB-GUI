@@ -1,0 +1,113 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:models="using:SSB_GUI.Models"
+        xmlns:lvc="using:LiveChartsCore.SkiaSharpView.Avalonia"
+        x:Class="SSB_GUI.MainWindow"
+        Title="SSB Data Explorer" Width="1200" Height="720">
+    <DockPanel Margin="16">
+        <Border DockPanel.Dock="Top" Background="#0D808080" CornerRadius="6" Padding="12" Margin="0,0,0,12">
+            <StackPanel Orientation="Vertical" Spacing="10">
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <StackPanel Spacing="3">
+                        <TextBlock Text="Language" FontSize="11" Foreground="Gray" FontWeight="Medium" />
+                        <ComboBox x:Name="LanguageComboBox"
+                                  SelectedIndex="0"
+                                  SelectionChanged="OnLanguageSelectionChanged"
+                                  Width="110">
+                            <ComboBoxItem Content="Norsk" Tag="no" />
+                            <ComboBoxItem Content="English" Tag="en" />
+                        </ComboBox>
+                    </StackPanel>
+
+                    <StackPanel Spacing="3">
+                        <TextBlock Text="Table of Contents (Search &amp; Fetch New)" FontSize="11" Foreground="Gray" FontWeight="Medium" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <AutoCompleteBox x:Name="TableSearchBox"
+                                             Width="360"
+                                             Watermark="Search table by name or ID..."
+                                             ValueMemberBinding="{Binding Label}"
+                                             SelectionChanged="OnTableSearchSelectionChanged">
+                                <AutoCompleteBox.ItemTemplate>
+                                    <DataTemplate x:DataType="models:SsbTableInfo">
+                                        <StackPanel Margin="2,4" Spacing="2">
+                                            <TextBlock Text="{Binding Label}" FontWeight="Medium" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding Id}" FontSize="11" Foreground="Gray" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </AutoCompleteBox.ItemTemplate>
+                            </AutoCompleteBox>
+
+                            <Button x:Name="FetchMetadataButton"
+                                    Content="Fetch Metadata"
+                                    IsEnabled="False"
+                                    Click="OnFetchMetadataClicked" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel Spacing="3">
+                        <TextBlock Text="Collected Metadata Files" FontSize="11" Foreground="Gray" FontWeight="Medium" />
+                        <ComboBox x:Name="MetadataComboBox"
+                                  Width="340"
+                                  MaxDropDownHeight="350"
+                                  PlaceholderText="Select collected metadata..."
+                                  SelectionChanged="OnMetadataSelectionChanged">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="models:SsbCachedMetadataItem">
+                                    <StackPanel Margin="2,3" Spacing="1" MaxWidth="320">
+                                        <TextBlock Text="{Binding Title}" FontWeight="Medium" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding TableId}" FontSize="11" Foreground="Gray" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
+
+                    <StackPanel Spacing="3" VerticalAlignment="Bottom">
+                        <Button x:Name="FetchButton"
+                                Content="Fetch Data"
+                                IsEnabled="False"
+                                Click="OnFetchDataClicked" />
+                    </StackPanel>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Top" 
+                Background="#1A808080" 
+                CornerRadius="6" 
+                Padding="12" 
+                Margin="0,0,0,16">
+            <StackPanel Spacing="8">
+                <TextBlock Text="Query Parameters (from Metadata)" FontWeight="Bold" FontSize="13" />
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                    <WrapPanel x:Name="DynamicParametersPanel" Orientation="Horizontal" />
+                </ScrollViewer>
+            </StackPanel>
+        </Border>
+        
+        <Border Background="#0D808080" CornerRadius="8" Padding="16">
+            <Grid RowDefinitions="Auto,*">
+                <TextBlock x:Name="ChartTitleTextBlock" 
+                           Grid.Row="0"
+                           FontWeight="SemiBold"
+                           FontSize="15"
+                           Margin="0,0,0,12"
+                           IsVisible="False"
+                           TextWrapping="Wrap" />
+
+                <TextBlock x:Name="ChartPlaceholder"
+                           Grid.Row="1"
+                           Text="Select a metadata file and query parameters above, then click 'Fetch Data' to display the graph." 
+                           HorizontalAlignment="Center" 
+                           VerticalAlignment="Center" 
+                           Foreground="Gray"
+                           FontSize="16" />
+
+                <lvc:CartesianChart x:Name="ChartControl"
+                                    Grid.Row="1"
+                                    IsVisible="False"
+                                    MinHeight="380" />
+            </Grid>
+        </Border>
+    </DockPanel>
+</Window>

@@ -1,0 +1,33 @@
+bin/
+obj/
+/packages/
+riderModule.iml
+/_ReSharper.Caches/
+
+## --- Build & Compiler Outputs ---
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## --- NuGet Packages ---
+*.nupkg
+packages/
+/packages/
+
+## --- Visual Studio / JetBrains Rider / VS Code ---
+.vs/
+.idea/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+riderModule.iml
+/_ReSharper.Caches/
+.vscode/
+
+## --- OS & Temporary Files ---
+.DS_Store
+Thumbs.db
+*.tmp
+*.log
