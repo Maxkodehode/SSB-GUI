@@ -7,6 +7,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using LiveChartsCore;
+using LiveChartsCore.Measure;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
 using SkiaSharp;
@@ -355,24 +356,37 @@ public partial class MainWindow : Window
 
     private void DisplayChartData(SsbDataResult dataResult)
     {
-        string seriesTitle = string.IsNullOrEmpty(dataResult.Unit)
-            ? dataResult.Title
-            : $"{dataResult.Title} ({dataResult.Unit})";
-
         var lineSeries = new LineSeries<double?>
         {
             Values = dataResult.Values,
-            Name = seriesTitle,
+            Name = string.IsNullOrEmpty(dataResult.Unit) ? "Value" : dataResult.Unit,
             Stroke = new SolidColorPaint(new SKColor(33, 150, 243), 2.5f),
-            GeometrySize = dataResult.Values.Count > 60 ? 0 : 6,
+            GeometrySize = dataResult.Values.Count > 60 ? 6 : 8,
             GeometryStroke = new SolidColorPaint(new SKColor(33, 150, 243), 2f),
             GeometryFill = new SolidColorPaint(SKColors.White),
-            Fill = new SolidColorPaint(new SKColor(33, 150, 243, 35))
+            Fill = new SolidColorPaint(new SKColor(33, 150, 243, 35)),
+            DataPadding = new LiveChartsCore.Drawing.LvcPoint(0, 0),
+            TooltipLabelFormatter = point =>
+            {
+                int index = (int)point.SecondaryValue;
+                string label = (index >= 0 && index < dataResult.Labels.Count)
+                    ? dataResult.Labels[index]
+                    : point.SecondaryValue.ToString();
+
+                string val = point.PrimaryValue.ToString("N0");
+
+                return string.IsNullOrEmpty(dataResult.Unit)
+                    ? $"{label}: {val}"
+                    : $"{label}: {val} {dataResult.Unit}";
+            }
         };
 
         if (ChartControl != null)
         {
             ChartControl.Series = new ISeries[] { lineSeries };
+            ChartControl.TooltipFindingStrategy = LiveChartsCore.Measure.TooltipFindingStrategy.CompareAll;
+            ChartControl.TooltipPosition = LiveChartsCore.Measure.TooltipPosition.Top;
+            ChartControl.TooltipTextSize = 12;
             ChartControl.XAxes = new Axis[]
             {
                 new Axis
