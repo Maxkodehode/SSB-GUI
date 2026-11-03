@@ -22,6 +22,8 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, Control> _parameterControls = new();
 
     private SsbCachedMetadataItem? _currentMetadataItem;
+    private SsbDataResult? _currentDataResult;
+    private bool _isParametersCollapsed = false;
 
     public MainWindow()
     {
@@ -277,14 +279,79 @@ public partial class MainWindow : Window
         DynamicParametersPanel?.Children.Clear();
         if (FetchButton != null)
             FetchButton.IsEnabled = false;
+
+        if (ParametersStatusSummary != null)
+            ParametersStatusSummary.Text = string.Empty;
+
+        SetParametersCollapsed(false);
+    }
+
+    private void OnToggleParametersClicked(object? sender, RoutedEventArgs e)
+    {
+        SetParametersCollapsed(!_isParametersCollapsed);
+    }
+
+    private void SetParametersCollapsed(bool collapse)
+    {
+        _isParametersCollapsed = collapse;
+
+        if (ParametersContent != null)
+        {
+            ParametersContent.IsVisible = !collapse;
+        }
+
+        if (ToggleParametersButton != null)
+        {
+            ToggleParametersButton.Content = collapse ? "▼ Show Parameters" : "▲ Hide Parameters";
+        }
+    }
+
+    private void UpdateParametersSummaryText()
+    {
+        if (ParametersStatusSummary == null)
+            return;
+
+        var selectedSummaries = new List<string>();
+        foreach (var (code, control) in _parameterControls)
+        {
+            if (control is ComboBox { SelectedItem: SsbValueOption selectedOption })
+            {
+                selectedSummaries.Add($"{selectedOption.Label}");
+            }
+        }
+
+        if (selectedSummaries.Count > 0)
+        {
+            ParametersStatusSummary.Text = $"({string.Join(", ", selectedSummaries)})";
+        }
+        else
+        {
+            ParametersStatusSummary.Text = string.Empty;
+        }
+    }
+
+    private void OnVisualizationTypeChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_currentDataResult != null)
+        {
+            RenderCurrentDataVisualization();
+        }
     }
 
     private void ResetChartArea()
     {
+        _currentDataResult = null;
+
         if (ChartControl != null)
         {
             ChartControl.Series = Array.Empty<ISeries>();
             ChartControl.IsVisible = false;
+        }
+
+        if (PieChartControl != null)
+        {
+            PieChartControl.Series = Array.Empty<ISeries>();
+            PieChartControl.IsVisible = false;
         }
 
         if (ChartTitleTextBlock != null)
@@ -326,6 +393,8 @@ public partial class MainWindow : Window
         }
         if (ChartControl != null)
             ChartControl.IsVisible = false;
+        if (PieChartControl != null)
+            PieChartControl.IsVisible = false;
         if (ChartTitleTextBlock != null)
             ChartTitleTextBlock.IsVisible = false;
 
@@ -346,7 +415,12 @@ public partial class MainWindow : Window
                 return;
             }
 
-            DisplayChartData(dataResult);
+            _currentDataResult = dataResult;
+            UpdateParametersSummaryText();
+            RenderCurrentDataVisualization();
+
+            // Auto-collapse query parameters when data is fetched and graph is displayed
+            SetParametersCollapsed(true);
         }
         finally
         {
@@ -354,63 +428,20 @@ public partial class MainWindow : Window
         }
     }
 
-    private void DisplayChartData(SsbDataResult dataResult)
+    private void RenderCurrentDataVisualization()
     {
-        var lineSeries = new LineSeries<double?>
+        if (_currentDataResult == null)
+            return;
+
+        string vizType = "Line";
+        if (VisualizationTypeComboBox?.SelectedItem is ComboBoxItem item && item.Tag is string tag)
         {
-            Values = dataResult.Values,
-            Name = string.IsNullOrEmpty(dataResult.Unit) ? "Value" : dataResult.Unit,
-            Stroke = new SolidColorPaint(new SKColor(33, 150, 243), 2.5f),
-            GeometrySize = dataResult.Values.Count > 60 ? 6 : 8,
-            GeometryStroke = new SolidColorPaint(new SKColor(33, 150, 243), 2f),
-            GeometryFill = new SolidColorPaint(SKColors.White),
-            Fill = new SolidColorPaint(new SKColor(33, 150, 243, 35)),
-            DataPadding = new LiveChartsCore.Drawing.LvcPoint(0, 0),
-            TooltipLabelFormatter = point =>
-            {
-                int index = (int)point.SecondaryValue;
-                string label = (index >= 0 && index < dataResult.Labels.Count)
-                    ? dataResult.Labels[index]
-                    : point.SecondaryValue.ToString();
-
-                string val = point.PrimaryValue.ToString("N0");
-
-                return string.IsNullOrEmpty(dataResult.Unit)
-                    ? $"{label}: {val}"
-                    : $"{label}: {val} {dataResult.Unit}";
-            }
-        };
-
-        if (ChartControl != null)
-        {
-            ChartControl.Series = new ISeries[] { lineSeries };
-            ChartControl.TooltipFindingStrategy = LiveChartsCore.Measure.TooltipFindingStrategy.CompareAll;
-            ChartControl.TooltipPosition = LiveChartsCore.Measure.TooltipPosition.Top;
-            ChartControl.TooltipTextSize = 12;
-            ChartControl.XAxes = new Axis[]
-            {
-                new Axis
-                {
-                    Labels = dataResult.Labels,
-                    LabelsRotation = dataResult.Labels.Count > 8 ? 45 : 0,
-                    TextSize = 11
-                }
-            };
-            ChartControl.YAxes = new Axis[]
-            {
-                new Axis
-                {
-                    Name = dataResult.Unit,
-                    TextSize = 12
-                }
-            };
-
-            ChartControl.IsVisible = true;
+            vizType = tag;
         }
 
         if (ChartTitleTextBlock != null)
         {
-            ChartTitleTextBlock.Text = dataResult.Title;
+            ChartTitleTextBlock.Text = _currentDataResult.Title;
             ChartTitleTextBlock.IsVisible = true;
         }
 
@@ -418,5 +449,181 @@ public partial class MainWindow : Window
         {
             ChartPlaceholder.IsVisible = false;
         }
+
+        if (vizType == "Pie")
+        {
+            RenderPieChart(_currentDataResult);
+        }
+        else
+        {
+            RenderCartesianChart(_currentDataResult, vizType);
+        }
+    }
+
+    private void RenderPieChart(SsbDataResult dataResult)
+    {
+        if (ChartControl != null)
+            ChartControl.IsVisible = false;
+
+        if (PieChartControl == null)
+            return;
+
+        var pieSeries = new List<ISeries>();
+        var colors = new[]
+        {
+            new SKColor(33, 150, 243),
+            new SKColor(76, 175, 80),
+            new SKColor(255, 152, 0),
+            new SKColor(233, 30, 99),
+            new SKColor(156, 39, 176),
+            new SKColor(0, 188, 212),
+            new SKColor(255, 193, 7),
+            new SKColor(121, 85, 72),
+            new SKColor(96, 125, 139),
+            new SKColor(63, 81, 181)
+        };
+
+        for (int i = 0; i < dataResult.Values.Count; i++)
+        {
+            double? val = dataResult.Values[i];
+            if (val == null || val <= 0)
+                continue;
+
+            string label = (i < dataResult.Labels.Count) ? dataResult.Labels[i] : $"Item {i + 1}";
+            var color = colors[i % colors.Length];
+
+            pieSeries.Add(new PieSeries<double>
+            {
+                Values = new double[] { val.Value },
+                Name = label,
+                Fill = new SolidColorPaint(color),
+                Pushout = 2,
+                TooltipLabelFormatter = point =>
+                {
+                    string formattedVal = point.PrimaryValue.ToString("N0");
+                    return string.IsNullOrEmpty(dataResult.Unit)
+                        ? $"{label}: {formattedVal}"
+                        : $"{label}: {formattedVal} {dataResult.Unit}";
+                }
+            });
+        }
+
+        PieChartControl.Series = pieSeries.ToArray();
+        PieChartControl.TooltipPosition = TooltipPosition.Top;
+        PieChartControl.TooltipTextSize = 12;
+        PieChartControl.IsVisible = true;
+    }
+
+    private void RenderCartesianChart(SsbDataResult dataResult, string vizType)
+    {
+        if (PieChartControl != null)
+            PieChartControl.IsVisible = false;
+
+        if (ChartControl == null)
+            return;
+
+        ISeries series;
+        string unitName = string.IsNullOrEmpty(dataResult.Unit) ? "Value" : dataResult.Unit;
+
+        string FormatTooltip(LiveChartsCore.Kernel.ChartPoint point)
+        {
+            int index = (int)point.SecondaryValue;
+            string label = (index >= 0 && index < dataResult.Labels.Count)
+                ? dataResult.Labels[index]
+                : point.SecondaryValue.ToString();
+
+            string val = point.PrimaryValue.ToString("N0");
+
+            return string.IsNullOrEmpty(dataResult.Unit)
+                ? $"{label}: {val}"
+                : $"{label}: {val} {dataResult.Unit}";
+        }
+
+        switch (vizType)
+        {
+            case "Column":
+                series = new ColumnSeries<double?>
+                {
+                    Values = dataResult.Values,
+                    Name = unitName,
+                    Fill = new SolidColorPaint(new SKColor(33, 150, 243)),
+                    Rx = 4,
+                    Ry = 4,
+                    MaxBarWidth = 48,
+                    DataPadding = new LiveChartsCore.Drawing.LvcPoint(0, 0),
+                    TooltipLabelFormatter = FormatTooltip
+                };
+                break;
+
+            case "Area":
+                series = new LineSeries<double?>
+                {
+                    Values = dataResult.Values,
+                    Name = unitName,
+                    Stroke = new SolidColorPaint(new SKColor(33, 150, 243), 2.5f),
+                    GeometrySize = dataResult.Values.Count > 60 ? 4 : 6,
+                    GeometryStroke = new SolidColorPaint(new SKColor(33, 150, 243), 2f),
+                    GeometryFill = new SolidColorPaint(SKColors.White),
+                    Fill = new SolidColorPaint(new SKColor(33, 150, 243, 100)),
+                    DataPadding = new LiveChartsCore.Drawing.LvcPoint(0, 0),
+                    TooltipLabelFormatter = FormatTooltip
+                };
+                break;
+
+            case "StepLine":
+                series = new StepLineSeries<double?>
+                {
+                    Values = dataResult.Values,
+                    Name = unitName,
+                    Stroke = new SolidColorPaint(new SKColor(33, 150, 243), 2.5f),
+                    GeometrySize = dataResult.Values.Count > 60 ? 4 : 6,
+                    GeometryStroke = new SolidColorPaint(new SKColor(33, 150, 243), 2f),
+                    GeometryFill = new SolidColorPaint(SKColors.White),
+                    Fill = new SolidColorPaint(new SKColor(33, 150, 243, 30)),
+                    DataPadding = new LiveChartsCore.Drawing.LvcPoint(0, 0),
+                    TooltipLabelFormatter = FormatTooltip
+                };
+                break;
+
+            case "Line":
+            default:
+                series = new LineSeries<double?>
+                {
+                    Values = dataResult.Values,
+                    Name = unitName,
+                    Stroke = new SolidColorPaint(new SKColor(33, 150, 243), 2.5f),
+                    GeometrySize = dataResult.Values.Count > 60 ? 6 : 8,
+                    GeometryStroke = new SolidColorPaint(new SKColor(33, 150, 243), 2f),
+                    GeometryFill = new SolidColorPaint(SKColors.White),
+                    Fill = new SolidColorPaint(new SKColor(33, 150, 243, 35)),
+                    DataPadding = new LiveChartsCore.Drawing.LvcPoint(0, 0),
+                    TooltipLabelFormatter = FormatTooltip
+                };
+                break;
+        }
+
+        ChartControl.Series = new ISeries[] { series };
+        ChartControl.TooltipFindingStrategy = TooltipFindingStrategy.CompareAll;
+        ChartControl.TooltipPosition = TooltipPosition.Top;
+        ChartControl.TooltipTextSize = 12;
+        ChartControl.XAxes = new Axis[]
+        {
+            new Axis
+            {
+                Labels = dataResult.Labels,
+                LabelsRotation = dataResult.Labels.Count > 8 ? 45 : 0,
+                TextSize = 11
+            }
+        };
+        ChartControl.YAxes = new Axis[]
+        {
+            new Axis
+            {
+                Name = dataResult.Unit,
+                TextSize = 12
+            }
+        };
+
+        ChartControl.IsVisible = true;
     }
 }

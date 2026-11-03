@@ -28,22 +28,51 @@ public class SsbDataService
         Directory.CreateDirectory(_metadataDirectory);
         Directory.CreateDirectory(_dataDirectory);
 
-        SyncDataFilesFromOtherLocations(baseDataDir);
+        MigrateAndCleanupOtherLocations(baseDataDir);
     }
 
     private static string ResolveBaseDataDirectory()
     {
-        string curDir = Directory.GetCurrentDirectory();
-        string candidateProject = Path.Combine(curDir, "SSB-GUI", "data-files-JSON");
-        if (Directory.Exists(Path.Combine(curDir, "SSB-GUI")) && !curDir.EndsWith("SSB-GUI"))
+        var candidateRoots = new List<string>
         {
-            return candidateProject;
+            Directory.GetCurrentDirectory(),
+            AppContext.BaseDirectory
+        };
+
+        foreach (var startDir in candidateRoots)
+        {
+            var dir = new DirectoryInfo(startDir);
+            while (dir != null)
+            {
+                // Check if this directory contains SSB-GUI.csproj
+                if (File.Exists(Path.Combine(dir.FullName, "SSB-GUI.csproj")))
+                {
+                    return Path.Combine(dir.FullName, "data-files-JSON");
+                }
+
+                // Check if this directory has a subfolder SSB-GUI containing SSB-GUI.csproj
+                string subProject = Path.Combine(dir.FullName, "SSB-GUI");
+                if (Directory.Exists(subProject) && File.Exists(Path.Combine(subProject, "SSB-GUI.csproj")))
+                {
+                    return Path.Combine(subProject, "data-files-JSON");
+                }
+
+                // Check if this directory has data-files-JSON and is not inside bin/ or obj/
+                if (!dir.FullName.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") &&
+                    !dir.FullName.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") &&
+                    Directory.Exists(Path.Combine(dir.FullName, "data-files-JSON")))
+                {
+                    return Path.Combine(dir.FullName, "data-files-JSON");
+                }
+
+                dir = dir.Parent;
+            }
         }
 
-        return Path.Combine(curDir, "data-files-JSON");
+        return Path.Combine(Directory.GetCurrentDirectory(), "data-files-JSON");
     }
 
-    private static void SyncDataFilesFromOtherLocations(string targetBaseDataDir)
+    private static void MigrateAndCleanupOtherLocations(string targetBaseDataDir)
     {
         string curDir = Directory.GetCurrentDirectory();
         string baseDir = AppContext.BaseDirectory;
@@ -51,13 +80,16 @@ public class SsbDataService
         var candidateSources = new List<string>
         {
             Path.Combine(baseDir, "data-files-JSON"),
-            Path.Combine(curDir, "data-files-JSON"),
-            Path.Combine(curDir, "SSB-GUI", "data-files-JSON")
+            Path.Combine(curDir, "bin", "Debug", "net10.0", "data-files-JSON"),
+            Path.Combine(curDir, "SSB-GUI", "bin", "Debug", "net10.0", "data-files-JSON")
         };
 
         foreach (var sourceDir in candidateSources)
         {
-            if (!Directory.Exists(sourceDir) || string.Equals(Path.GetFullPath(sourceDir), Path.GetFullPath(targetBaseDataDir), StringComparison.OrdinalIgnoreCase))
+            if (!Directory.Exists(sourceDir))
+                continue;
+
+            if (string.Equals(Path.GetFullPath(sourceDir), Path.GetFullPath(targetBaseDataDir), StringComparison.OrdinalIgnoreCase))
                 continue;
 
             foreach (var subDir in new[] { "metadata", "table-of-content", "data" })
@@ -69,20 +101,31 @@ public class SsbDataService
                     Directory.CreateDirectory(dstSub);
                     foreach (var file in Directory.GetFiles(srcSub, "*.json"))
                     {
-                        string dstFile = Path.Combine(dstSub, Path.GetFileName(file));
-                        if (!File.Exists(dstFile))
+                        string fileName = Path.GetFileName(file);
+                        string dstFile = Path.Combine(dstSub, fileName);
+                        try
                         {
-                            try
+                            if (!File.Exists(dstFile))
                             {
                                 File.Copy(file, dstFile, overwrite: false);
                             }
-                            catch
-                            {
-                                // ignore
-                            }
+                            File.Delete(file);
+                        }
+                        catch
+                        {
+                            // ignore
                         }
                     }
                 }
+            }
+
+            try
+            {
+                Directory.Delete(sourceDir, recursive: true);
+            }
+            catch
+            {
+                // ignore
             }
         }
     }
@@ -147,7 +190,7 @@ public class SsbDataService
 
             string rawResponse = await response.Content.ReadAsStringAsync();
 
-            string fileName = $"{tableId}_{lang}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.json";
+            string fileName = "latest_data.json";
             string filePath = Path.Combine(_dataDirectory, fileName);
             using (var jsonDoc = JsonDocument.Parse(rawResponse))
             {
@@ -323,21 +366,6 @@ public class SsbDataService
         Directory.CreateDirectory(_metadataDirectory);
         string filePath = Path.Combine(_metadataDirectory, $"{tableId}_{lang}.json");
 
-        if (!File.Exists(filePath) && !forceFetch)
-        {
-            string fallback = Path.Combine(AppContext.BaseDirectory, "data-files-JSON", "metadata", $"{tableId}_{lang}.json");
-            if (File.Exists(fallback))
-            {
-                try
-                {
-                    File.Copy(fallback, filePath, overwrite: false);
-                }
-                catch
-                {
-                }
-            }
-        }
-
         if (!File.Exists(filePath) || forceFetch)
         {
             try
@@ -412,7 +440,7 @@ public class SsbDataService
     {
         try
         {
-            string ssbUrl = $"https://data.ssb.no/api/pxwebapi/v2/tables?lang={lang}";
+            string ssbUrl = $"https://data.ssb.no/api/pxwebapi/v2/tables?lang={lang}&pageSize=10000";
 
             var rawJson = await _httpClient.GetStringAsync(ssbUrl);
 
